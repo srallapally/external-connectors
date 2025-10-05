@@ -59,8 +59,37 @@ async function bundleFile(inFile, outFile) {
         sourcemap: true,
         minify: MINIFY,
         legalComments: "none",
+        external: ["@openicf/connector-spi"]
     });
 }
+async function copySharedSpi() {
+    const spiDist = path.resolve(SPI_PACKAGE, "dist");
+    const spiPackageJson = path.resolve(SPI_PACKAGE, "package.json");
+
+    try {
+        await fs.access(spiDist);
+    } catch {
+        throw new Error(
+            `connector-spi is not built. Please run:\n` +
+            `  cd ${SPI_PACKAGE}\n` +
+            `  npm install\n` +
+            `  npm run build`
+        );
+    }
+
+    const connectorNodeModules = path.resolve(OUTDIR, "node_modules", "@openicf", "connector-spi");
+    await ensureDir(connectorNodeModules);
+
+    await fs.copyFile(spiPackageJson, path.resolve(connectorNodeModules, "package.json"));
+
+    const targetDist = path.resolve(connectorNodeModules, "dist");
+    await fs.cp(spiDist, targetDist, { recursive: true });
+
+    console.log(`  • copied @openicf/connector-spi to node_modules`);
+}
+
+// Call it before bundling
+await copySharedSpi();
 
 async function loadInstances() {
     if (!INSTANCES_PATH) return [];
