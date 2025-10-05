@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
+import semver from "semver";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +19,7 @@ for (let i = 2; i < process.argv.length; i++) {
         args[k] = v;
     }
 }
+
 const req = (k) => {
     if (!args[k]) throw new Error(`Missing --${k}`);
     return args[k];
@@ -27,6 +29,7 @@ const req = (k) => {
 const SRC = path.resolve(process.cwd(), req("src"));
 const NAME = req("name");
 const TYPE = req("type");
+const VERSION = req("version");
 const ENTRY = path.resolve(SRC, req("entry"));
 
 // Optional
@@ -39,7 +42,9 @@ const ROOT = path.resolve(__dirname, "..");        // external-connectors/
 const DIST = path.resolve(ROOT, "dist");           // external-connectors/dist
 const OUTDIR = path.resolve(DIST, NAME);           // external-connectors/dist/<name>
 
-async function ensureDir(d) { await fs.mkdir(d, { recursive: true }); }
+async function ensureDir(d) {
+    await fs.mkdir(d, { recursive: true });
+}
 
 async function bundleFile(inFile, outFile) {
     await esbuild.build({
@@ -64,47 +69,175 @@ async function loadInstances() {
     throw new Error("--instances file must be an array of { id, config? } or { instances: [...] }");
 }
 
-(async () => {
-    console.log(`\n🔧 Packing connector '${NAME}' (type='${TYPE}')`);
+async function validateEntryPoint(filePath) {
+    try {
+        const stats = await fs.stat(filePath);
+        if (!stats.isFile()) {
+            throw new Error(`Entry point is not a file: ${filePath}`);
+        }
 
-    await ensureDir(OUTDIR);
+        const content = await fs.readFile(filePath, "utf8");
 
-    // Bundle entry
-    const entryOut = path.resolve(OUTDIR, "index.js");
-    await bundleFile(ENTRY, entryOut);
-    console.log(`  • built ./${NAME}/index.js`);
+        if (!content.includes("export") && !content.includes("module.exports")) {
+            console.warn("⚠️  Warning: Entry point may not export a factory function");
+        }
 
-    // Bundle config (optional)
-    let hasConfig = false;
-    if (CONFIG) {
-        const cfgOut = path.resolve(OUTDIR, "config.js");
-        await bundleFile(CONFIG, cfgOut);
-        hasConfig = true;
-        console.log(`  • built ./${NAME}/config.js`);
+        return true;
+    } catch (e) {
+        throw new Error(`Entry point validation failed: ${e.message}`);
     }
+}
 
-    // Instances
-    let instances = await loadInstances();
-    if (!instances.length) instances = [{ id: NAME, config: {} }];
+async function validateConfigFile(filePath) {
+    try {
+        const stats = await fs.stat(filePath);
+        if (!stats.isFile()) {
+            throw new Error(`Config file is not a file: ${filePath}`);
+        }
+        return true;
+    } catch (e) {
+        throw new Error(`Config file validation failed: ${e.message}`);
+    }
+}
 
-    // ✨ Per-connector manifest path
-    const manifestPath = path.resolve(OUTDIR, "manifest.json");
+function validateVersion(version) {
+    const cleaned = semver.clean(version);
+    if (!cleaned) {
+        throw new Error(`Invalid semantic version: "${version}". Must follow semver format (e.g., "1.0.0", "2.1.3")`);
+    }
+    return cleaned;
+}
 
-    // Manifest content expected by the service INSIDE the connector folder
-    const manifest = {
-        id: NAME,
-        type: TYPE,
-        entry: "./index.js",
-        ...(hasConfig ? { config: "./config.js" } : {}),
-        instances
-    };
+function validateName(name) {
+    if (!/^[a-z0-9_-]+$/i.test(name)) {
+        throw new Error(`Invalid name: "${name}". Must contain only alphanumeric characters, underscores, and hyphens`);
+    }
+    if (name.length > 128) {
+        throw new Error(`Name too long: "${name}". Must be 128 characters or less`);
+    }
+    return name;
+}
 
-    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+function validateType(type) {
+    if (!/^[a-z0-9_-]+$/i.test(type)) {
+        throw new Error(`Invalid type: "${type}". Must contain only alphanumeric characters, underscores, and hyphens`);
+    }
+    if (type.length > 128) {
+        throw new Error(`Type too long: "${type}". Must be 128 characters or less`);
+    }
+    return type;
+}
 
-    console.log(`  • wrote ./${NAME}/manifest.json`);
-    console.log(`\n✔ Connector '${NAME}' ready at ${OUTDIR}`);
-    console.log(`Next: start the service with --connectors ${DIST}\n`);
-})().catch((e) => {
-    console.error(e?.stack || e);
-    process.exit(1);
-});
+async function validateBundledEntry(bundledPath) {
+    try {
+        const url = new URL(`file://${bundledPath}`);
+        const mod = await import(url.href);
+
+        if (typeof mod.default !== "function") {
+            throw new Error("Bundled entry point must have a default export that is a factory function");
+        }
+
+        console.log("✓ Validated: Entry exports a factory function");
+        return true;
+    } catch (e) {
+        if (e.message.includes("default export")) {
+            throw e;
+        }
+        console.warn(`⚠️  Warning: Could not validate entry point exports: ${e.message}`);
+        return false;
+    }
+}
+
+(async () => {
+    try {
+        console.log(`\n🔧 Packing connector '${NAME}' (type='${TYPE}', version='${VERSION}')`);
+
+        // Pre-deployment validation
+        console.log("\n📋 Running pre-deployment validation...");
+
+        const validatedName = validateName(NAME);
+        const validatedType = validateType(TYPE);
+        const validatedVersion = validateVersion(VERSION);
+
+        console.log(`✓ Name: ${validatedName}`);
+        console.log(`✓ Type: ${validatedType}`);
+        console.log(`✓ Version: ${validatedVersion}`);
+
+        await validateEntryPoint(ENTRY);
+        console.log(`✓ Entry point exists: ${path.relative(process.cwd(), ENTRY)}`);
+
+        if (CONFIG) {
+            await validateConfigFile(CONFIG);
+            console.log(`✓ Config file exists: ${path.relative(process.cwd(), CONFIG)}`);
+        }
+
+        await ensureDir(OUTDIR);
+
+        // Bundle entry
+        console.log("\n🔨 Building...");
+        const entryOut = path.resolve(OUTDIR, "index.js");
+        await bundleFile(ENTRY, entryOut);
+        console.log(`  • Built ./${NAME}/index.js`);
+
+        // Validate bundled entry exports
+        await validateBundledEntry(entryOut);
+
+        // Bundle config (optional)
+        let hasConfig = false;
+        if (CONFIG) {
+            const cfgOut = path.resolve(OUTDIR, "config.js");
+            await bundleFile(CONFIG, cfgOut);
+            hasConfig = true;
+            console.log(`  • Built ./${NAME}/config.js`);
+        }
+
+        // Instances
+        let instances = await loadInstances();
+        if (!instances.length) {
+            instances = [{ id: NAME, config: {} }];
+        }
+
+        // Validate instance configurations
+        for (const inst of instances) {
+            if (!inst.id) {
+                throw new Error("Instance configuration missing required 'id' field");
+            }
+            if (inst.connectorVersion) {
+                const cleanedInstVersion = semver.clean(inst.connectorVersion);
+                if (!cleanedInstVersion) {
+                    throw new Error(`Invalid semantic version in instance "${inst.id}": "${inst.connectorVersion}"`);
+                }
+            }
+        }
+
+        console.log(`✓ Validated ${instances.length} instance(s)`);
+
+        // Manifest path
+        const manifestPath = path.resolve(OUTDIR, "manifest.json");
+
+        // Manifest content expected by the service
+        const manifest = {
+            id: validatedName,
+            type: validatedType,
+            version: validatedVersion,
+            entry: "./index.js",
+            ...(hasConfig ? { config: "./config.js" } : {}),
+            instances
+        };
+
+        await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+
+        console.log(`  • Wrote ./${NAME}/manifest.json`);
+        console.log(`\n✅ Connector '${NAME}@${validatedVersion}' ready at ${OUTDIR}`);
+        console.log(`\nNext steps:`);
+        console.log(`  1. Review the generated manifest at: ${manifestPath}`);
+        console.log(`  2. Start the service with: --connectors ${DIST}\n`);
+
+    } catch (e) {
+        console.error(`\n❌ Error: ${e.message}`);
+        if (e.stack && process.env.DEBUG) {
+            console.error(e.stack);
+        }
+        process.exit(1);
+    }
+})();
