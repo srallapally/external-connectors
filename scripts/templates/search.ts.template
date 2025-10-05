@@ -1,0 +1,77 @@
+
+  async function search(
+    objectClass: string,
+    filter: any,
+    handler: ResultsHandler,
+    options?: OperationOptions
+  ): Promise<SearchResult> {
+    // TODO: Implement search operation
+    logger.log(`Searching ${objectClass}`, filter);
+    
+    switch (objectClass) {
+{{#objectClassCase}}      case "{{objectClass}}":
+        // TODO: Search {{objectClass}} with filter via your API/service
+        // Example implementation:
+        // const queryParams = {
+        //   filter: filter?.query || '',
+        //   pageSize: options?.pageSize || 100,
+        //   pageToken: options?.pageToken
+        // };
+        // const response = await client.get('/{{objectClass}}', { params: queryParams });
+        // 
+        // for (const item of response.items) {
+        //   const obj: ConnectorObject = {
+        //     objectClass,
+        //     uid: item.id,
+        //     name: item.name,
+        //     attributes: {
+        //       id: item.id,
+        //       name: item.name,
+        //       // ... map other attributes
+        //     }
+        //   };
+        //   const shouldContinue = await handler(obj);
+        //   if (!shouldContinue) break;
+        // }
+        // 
+        // return {
+        //   pagedResultsCookie: response.nextPageToken || null,
+        //   remainingPagedResults: response.hasMore ? -1 : null
+        // };
+        
+        // Placeholder implementation (replace with actual API call):
+        const results = [
+          {
+            objectClass,
+            uid: "1",
+            name: "{{objectClass}}-1",
+            attributes: { 
+              id: "1", 
+              name: "{{objectClass}}-1",
+              // Add more sample attributes
+            }
+          },
+          {
+            objectClass,
+            uid: "2",
+            name: "{{objectClass}}-2",
+            attributes: { 
+              id: "2", 
+              name: "{{objectClass}}-2",
+              // Add more sample attributes
+            }
+          }
+        ];
+        
+        for (const obj of results) {
+          const cont = await handler(obj);
+          if (!cont) break;
+        }
+        break;
+{{/objectClassCase}}      default:
+        throw new Error(`Search not supported for ${objectClass}`);
+    }
+    
+    return { pagedResultsCookie: null, remainingPagedResults: null };
+  }
+

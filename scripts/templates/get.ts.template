@@ -1,0 +1,42 @@
+
+  async function get(
+    objectClass: string,
+    uid: string,
+    options?: OperationOptions
+  ): Promise<ConnectorObject | null> {
+    // TODO: Implement get operation
+    logger.log(`Getting ${objectClass} with uid: ${uid}`);
+    
+    switch (objectClass) {
+{{#objectClassCase}}      case "{{objectClass}}":
+        // TODO: Fetch {{objectClass}} by uid from your API/service
+        // Example implementation:
+        // const response = await client.get(`/{{objectClass}}/${uid}`);
+        // return {
+        //   objectClass,
+        //   uid: response.id,
+        //   name: response.name,
+        //   attributes: {
+        //     id: response.id,
+        //     name: response.name,
+        //     email: response.email,
+        //     // ... map other attributes from response
+        //   }
+        // };
+        
+        // Placeholder implementation (replace with actual API call):
+        return {
+          objectClass,
+          uid,
+          name: `{{objectClass}}-${uid}`,
+          attributes: { 
+            id: uid, 
+            name: `{{objectClass}}-${uid}`,
+            // Add more attributes as needed
+          }
+        };
+{{/objectClassCase}}      default:
+        throw new Error(`Get not supported for ${objectClass}`);
+    }
+  }
+

@@ -110,6 +110,22 @@ function generateConfigTs(connectorName) {
     );
 }
 
+function generateConfigTsWithParams(connectorName, configParams) {
+    return loadTemplate("config.ts.template").then(template => {
+        // Generate configuration parameter definitions
+        const paramDefinitions = configParams.length > 0
+            ? configParams.map(param => `  ${param}: string;`).join("\n")
+            : `  // apiUrl: string;
+  // apiKey: string;
+  // timeout?: number;`;
+
+        return renderTemplate(template, {
+            connectorName,
+            configParams: paramDefinitions
+        });
+    });
+}
+
 function generatePackageJson(connectorName, version) {
     return {
         name: `${connectorName}-connector`,
@@ -162,6 +178,9 @@ async function main() {
         "__ACCOUNT__,__GROUP__"
     );
 
+    const configParams = await prompt("Configuration parameters (comma-separated, e.g., apiUrl,apiKey,timeout): ");
+    const configParamsList = configParams ? configParams.split(",").map(s => s.trim()).filter(Boolean) : [];
+
     rl.close();
 
     console.log("\n=== Generating connector scaffold ===\n");
@@ -185,7 +204,7 @@ async function main() {
 
     await fs.writeFile(
         configPath,
-        await generateConfigTs(capitalizedName),
+        await generateConfigTsWithParams(capitalizedName, configParamsList),
         "utf8"
     );
     console.log(`✓ Created ${configPath}`);

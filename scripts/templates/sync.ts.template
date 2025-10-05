@@ -1,0 +1,64 @@
+
+  async function sync(
+    objectClass: string,
+    token: any,
+    handler: ResultsHandler,
+    options?: OperationOptions
+  ): Promise<{ token: any }> {
+    // TODO: Implement sync operation
+    logger.log(`Syncing ${objectClass} from token:`, token);
+    
+    switch (objectClass) {
+{{#objectClassCase}}      case "{{objectClass}}":
+        // TODO: Sync {{objectClass}} changes since token via your API/service
+        // Example implementation:
+        // const params = {
+        //   since: token || new Date(0).toISOString(),
+        //   pageSize: options?.pageSize || 100
+        // };
+        // const response = await client.get('/{{objectClass}}/changes', { params });
+        // 
+        // for (const change of response.changes) {
+        //   const obj: ConnectorObject = {
+        //     objectClass,
+        //     uid: change.id,
+        //     name: change.name,
+        //     attributes: {
+        //       id: change.id,
+        //       name: change.name,
+        //       _changeType: change.type, // 'created', 'updated', 'deleted'
+        //       // ... map other attributes
+        //     }
+        //   };
+        //   const shouldContinue = await handler(obj);
+        //   if (!shouldContinue) break;
+        // }
+        // 
+        // return { token: response.nextToken || new Date().toISOString() };
+        
+        // Placeholder implementation (replace with actual API call):
+        const changes = [
+          {
+            objectClass,
+            uid: "1",
+            name: "{{objectClass}}-1",
+            attributes: { 
+              id: "1", 
+              name: "{{objectClass}}-1",
+              _changeType: "updated"
+            }
+          }
+        ];
+        
+        for (const obj of changes) {
+          const cont = await handler(obj);
+          if (!cont) break;
+        }
+        break;
+{{/objectClassCase}}      default:
+        throw new Error(`Sync not supported for ${objectClass}`);
+    }
+    
+    return { token: Date.now() };
+  }
+

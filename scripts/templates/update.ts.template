@@ -1,0 +1,47 @@
+
+  async function update(
+    objectClass: string,
+    uid: string,
+    attrs: Record<string, AttributeValue>,
+    options?: OperationOptions
+  ): Promise<ConnectorObject> {
+    // TODO: Implement update operation
+    logger.log(`Updating ${objectClass} ${uid}`, attrs);
+    
+    switch (objectClass) {
+{{#objectClassCase}}      case "{{objectClass}}":
+        // TODO: Update {{objectClass}} by uid via your API/service
+        // Example implementation:
+        // const payload = {
+        //   name: attrs.name,
+        //   email: attrs.email,
+        //   // ... map changed attributes to API format
+        // };
+        // const response = await client.patch(`/{{objectClass}}/${uid}`, payload);
+        // return {
+        //   objectClass,
+        //   uid: response.id,
+        //   name: response.name,
+        //   attributes: {
+        //     id: response.id,
+        //     name: response.name,
+        //     // ... map updated response back to attributes
+        //   }
+        // };
+        
+        // Placeholder implementation (replace with actual API call):
+        return {
+          objectClass,
+          uid,
+          name: attrs.name as string || `${objectClass}-${uid}`,
+          attributes: { 
+            ...attrs, 
+            id: uid,
+            // Return updated attributes
+          }
+        };
+{{/objectClassCase}}      default:
+        throw new Error(`Update not supported for ${objectClass}`);
+    }
+  }
+

@@ -1,0 +1,24 @@
+
+  async function del(
+    objectClass: string,
+    uid: string,
+    options?: OperationOptions
+  ): Promise<void> {
+    // TODO: Implement delete operation
+    logger.log(`Deleting ${objectClass} ${uid}`);
+    
+    switch (objectClass) {
+{{#objectClassCase}}      case "{{objectClass}}":
+        // TODO: Delete {{objectClass}} by uid via your API/service
+        // Example implementation:
+        // await client.delete(`/{{objectClass}}/${uid}`);
+        // logger.log(`Successfully deleted {{objectClass}} ${uid}`);
+        
+        // Placeholder implementation (replace with actual API call):
+        logger.log(`Would delete {{objectClass}} with uid: ${uid}`);
+        break;
+{{/objectClassCase}}      default:
+        throw new Error(`Delete not supported for ${objectClass}`);
+    }
+  }
+
