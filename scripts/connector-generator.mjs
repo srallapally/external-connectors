@@ -64,117 +64,50 @@ async function generateOperationCode(operation, objectClasses) {
 }
 
 async function generateIndexTs(connectorName, operations, objectClasses) {
+    const template = await loadTemplate("index.ts.template");
+
+    // Generate operation methods
     const operationMethods = [];
     for (const op of operations) {
         const code = await generateOperationCode(op, objectClasses);
         if (code) operationMethods.push(code);
     }
-
     const operationMethodsStr = operationMethods.join("\n");
 
+    // Generate operation exports
     const operationExports = operations.map(op => {
         const opLower = op.toLowerCase();
         return opLower === "delete" ? "delete: del" : opLower;
     }).join(",\n    ");
 
-    const objectClassDefinitions = objectClasses.map(oc => `    oc(
-      "${oc}",
-      "${oc}",
-      [
-        attr("id", "string", { readable: true, returnedByDefault: true }),
-        attr("name", "string", { readable: true, creatable: true, updateable: true, returnedByDefault: true }),
-        // TODO: Add more attributes for ${oc}
-      ],
-      [${operations.map(op => `"${op.toUpperCase()}"`).join(", ")}]
-    )`).join(",\n");
+    // Generate object class definitions
+    const objectClassDefinitions = objectClasses.map(oc => {
+        const supportedOps = operations.map(op => `"${op.toUpperCase()}"`).join(", ");
+        return `      oc(
+        "${oc}",
+        "${oc}",
+        [
+          attr("id", "string", { readable: true, returnedByDefault: true }),
+          attr("name", "string", { readable: true, creatable: true, updateable: true, returnedByDefault: true }),
+          // TODO: Add more attributes for ${oc}
+        ],
+        [${supportedOps}]
+      )`;
+    }).join(",\n");
 
-    return `import type {
-  ConnectorSpi,
-  ConnectorObject,
-  AttributeValue,
-  OperationOptions,
-  Schema,
-  ObjectClassInfo,
-  SchemaAttribute,
-  ResultsHandler,
-  SearchResult
-} from "../spi/types.js";
-import { ${connectorName}Configuration } from "./config.js";
-
-function attr(
-  name: string,
-  type: "string" | "boolean" | "number" | "binary",
-  flags?: Partial<Omit<SchemaAttribute, "name" | "type">>
-): SchemaAttribute {
-  return { name, type, ...flags };
-}
-
-function oc(
-  name: string,
-  nativeName: string,
-  attributes: SchemaAttribute[],
-  supports: Array<"CREATE"|"UPDATE"|"DELETE"|"GET"|"SEARCH"|"SYNC">
-): ObjectClassInfo {
-  return { name, nativeName, attributes, supports };
-}
-
-export default async function factory(ctx: {
-  logger: Console;
-  config: ${connectorName}Configuration;
-  instanceId: string;
-  connectorId: string;
-  type: string;
-}): Promise<ConnectorSpi> {
-  const { config, logger } = ctx;
-
-  // TODO: Initialize your connector client/connection here
-  // Example: const client = new YourClient(config);
-
-  async function schema(): Promise<Schema> {
-    const objectClasses: ObjectClassInfo[] = [
-${objectClassDefinitions}
-    ];
-
-    return { objectClasses };
-  }
-
-  async function test(): Promise<void> {
-    // TODO: Implement connection test
-    logger.log("${connectorName} connector test successful");
-  }
-${operationMethodsStr}
-
-  return {
-    schema,
-    test,
-    ${operationExports}
-  };
-}
-`;
+    // Render template
+    return renderTemplate(template, {
+        connectorName,
+        objectClassDefinitions,
+        operationMethods: operationMethodsStr,
+        operationExports
+    });
 }
 
 function generateConfigTs(connectorName) {
-    return `import type { Configuration } from "../spi/configuration.js";
-
-export interface ${connectorName}Configuration extends Configuration {
-  // TODO: Define your connector-specific configuration properties
-  // Example:
-  // apiUrl: string;
-  // apiKey: string;
-  // timeout?: number;
-}
-
-export async function buildConfiguration(raw: any): Promise<${connectorName}Configuration> {
-  // TODO: Validate and build configuration
-  const config: ${connectorName}Configuration = {
-    ...raw
-  };
-
-  return config;
-}
-
-export default buildConfiguration;
-`;
+    return loadTemplate("config.ts.template").then(template =>
+        renderTemplate(template, { connectorName })
+    );
 }
 
 function generatePackageJson(connectorName, version) {
@@ -216,7 +149,8 @@ async function main() {
 
     const type = await prompt(`Connector type (default: ${name}): `) || name;
 
-    const directory = await prompt(`Directory (default: ./src/${name}-${version}): `) || `./src/${name}-${version}`;
+    const connectorDirName = `${name}-connector-${version}`;
+    const directory = await prompt(`Directory (default: ./${connectorDirName}): `) || `./${connectorDirName}`;
 
     const operations = await promptMultiple(
         "Supported operations",
@@ -251,7 +185,7 @@ async function main() {
 
     await fs.writeFile(
         configPath,
-        generateConfigTs(capitalizedName),
+        await generateConfigTs(capitalizedName),
         "utf8"
     );
     console.log(`✓ Created ${configPath}`);
