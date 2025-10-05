@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Updating to handling versioning and minification
+
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
