@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// scripts/connector-generator.mjs
 import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline/promises";
@@ -42,7 +43,7 @@ function renderTemplate(template, vars) {
 
 async function generateOperationCode(operation, objectClasses) {
     const operation_upper = operation.toUpperCase();
-    const templateFile = `operation-${operation.toLowerCase()}.ts.template`;
+    const templateFile = `${operation.toLowerCase()}.ts.template`;
 
     try {
         let template = await loadTemplate(templateFile);
@@ -64,7 +65,12 @@ async function generateOperationCode(operation, objectClasses) {
 }
 
 async function generateIndexTs(connectorName, operations, objectClasses) {
-    const template = await loadTemplate("index.ts.template");
+    let template;
+    try {
+        template = await loadTemplate("index.ts.template");
+    } catch (err) {
+        throw new Error(`Cannot generate index.ts: template/index.ts.template not found (${err.message})`);
+    }
 
     // Generate operation methods
     const operationMethods = [];
@@ -105,25 +111,31 @@ async function generateIndexTs(connectorName, operations, objectClasses) {
 }
 
 function generateConfigTs(connectorName) {
-    return loadTemplate("config.ts.template").then(template =>
-        renderTemplate(template, { connectorName })
-    );
+    return loadTemplate("config.ts.template")
+        .catch(err => {
+            throw new Error(`Cannot generate config.ts: templates/config.ts.template not found (${err.message})`);
+        })
+        .then(template => renderTemplate(template, { connectorName }));
 }
 
 function generateConfigTsWithParams(connectorName, configParams) {
-    return loadTemplate("config.ts.template").then(template => {
-        // Generate configuration parameter definitions
-        const paramDefinitions = configParams.length > 0
-            ? configParams.map(param => `  ${param}: string;`).join("\n")
-            : `  // apiUrl: string;
+    return loadTemplate("config.ts.template")
+        .catch(err => {
+            throw new Error(`Cannot generate config.ts: templates/config.ts.template not found (${err.message})`);
+        })
+        .then(template => {
+            // Generate configuration parameter definitions
+            const paramDefinitions = configParams.length > 0
+                ? configParams.map(param => `  ${param}: string;`).join("\n")
+                : `  // apiUrl: string;
   // apiKey: string;
   // timeout?: number;`;
 
-        return renderTemplate(template, {
-            connectorName,
-            configParams: paramDefinitions
+            return renderTemplate(template, {
+                connectorName,
+                configParams: paramDefinitions
+            });
         });
-    });
 }
 
 function generatePackageJson(connectorName, version) {

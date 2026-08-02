@@ -2,23 +2,34 @@
   async function search(
     objectClass: string,
     filter: any,
-    handler: ResultsHandler,
-    options?: OperationOptions
+    handlerOrOptions?: ResultsHandler | OperationOptions,
+    maybeOptions?: OperationOptions
   ): Promise<SearchResult> {
+    // This connector always declares searchStreaming: true (see the factory's
+    // return object), so the framework only ever calls this with a handler as
+    // the third argument. The parameter is still typed as the full
+    // ResultsHandler | OperationOptions union because that's ConnectorSpi's
+    // actual search() contract -- narrowing it to just ResultsHandler would
+    // make this function not structurally assignable to that contract. See
+    // @governance-connector-framework/core's own testing/FakeConnector.ts for
+    // the same pattern.
+    const handler = handlerOrOptions as ResultsHandler;
+    const options = maybeOptions;
+
     // TODO: Implement search operation
     logger.log(`Searching ${objectClass}`, filter);
-    
+
     switch (objectClass) {
-{{#objectClassCase}}      case "{{objectClass}}":
+{{#objectClassCase}}      case "{{objectClass}}": {
         // TODO: Search {{objectClass}} with filter via your API/service
         // Example implementation:
         // const queryParams = {
         //   filter: filter?.query || '',
         //   pageSize: options?.pageSize || 100,
-        //   pageToken: options?.pageToken
+        //   pageToken: options?.pagedResultsCookie
         // };
         // const response = await client.get('/{{objectClass}}', { params: queryParams });
-        // 
+        //
         // for (const item of response.items) {
         //   const obj: ConnectorObject = {
         //     objectClass,
@@ -33,45 +44,46 @@
         //   const shouldContinue = await handler(obj);
         //   if (!shouldContinue) break;
         // }
-        // 
+        //
         // return {
         //   pagedResultsCookie: response.nextPageToken || null,
         //   remainingPagedResults: response.hasMore ? -1 : null
         // };
-        
+
         // Placeholder implementation (replace with actual API call):
-        const results = [
+        const results: ConnectorObject[] = [
           {
             objectClass,
             uid: "1",
-            name: "{{objectClass}}-1",
-            attributes: { 
-              id: "1", 
-              name: "{{objectClass}}-1",
+            name: `{{objectClass}}-1`,
+            attributes: {
+              id: "1",
+              name: `{{objectClass}}-1`,
               // Add more sample attributes
             }
           },
           {
             objectClass,
             uid: "2",
-            name: "{{objectClass}}-2",
-            attributes: { 
-              id: "2", 
-              name: "{{objectClass}}-2",
+            name: `{{objectClass}}-2`,
+            attributes: {
+              id: "2",
+              name: `{{objectClass}}-2`,
               // Add more sample attributes
             }
           }
         ];
-        
+
         for (const obj of results) {
           const cont = await handler(obj);
           if (!cont) break;
         }
         break;
+      }
 {{/objectClassCase}}      default:
         throw new Error(`Search not supported for ${objectClass}`);
     }
-    
+
     return { pagedResultsCookie: null, remainingPagedResults: null };
   }
 
