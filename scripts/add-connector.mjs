@@ -1,274 +1,250 @@
 #!/usr/bin/env node
-// Updating to handling versioning and minification
-
+// scripts/connector-generator.mjs
 import fs from "node:fs/promises";
 import path from "node:path";
+import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import * as esbuild from "esbuild";
-import semver from "semver";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const args = {};
-for (let i = 2; i < process.argv.length; i++) {
-    const a = process.argv[i];
-    if (a.startsWith("--")) {
-        const k = a.slice(2);
-        const v = (i + 1 < process.argv.length && !process.argv[i + 1].startsWith("--"))
-            ? process.argv[++i]
-            : "true";
-        args[k] = v;
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+async function prompt(question) {
+    return rl.question(question);
+}
+
+async function promptMultiple(question, defaultValue = "") {
+    const answer = await prompt(`${question} (comma-separated, default: ${defaultValue}): `);
+    if (!answer.trim()) return defaultValue.split(",").map(s => s.trim()).filter(Boolean);
+    return answer.split(",").map(s => s.trim()).filter(Boolean);
+}
+
+async function ensureDir(dir) {
+    await fs.mkdir(dir, { recursive: true });
+}
+
+async function loadTemplate(templateName) {
+    const templatePath = path.join(__dirname, "templates", templateName);
+    return await fs.readFile(templatePath, "utf8");
+}
+
+function renderTemplate(template, vars) {
+    let result = template;
+    for (const [key, value] of Object.entries(vars)) {
+        const regex = new RegExp(`{{${key}}}`, "g");
+        result = result.replace(regex, value);
+    }
+    return result;
+}
+
+async function generateOperationCode(operation, objectClasses) {
+    const operation_upper = operation.toUpperCase();
+    const templateFile = `${operation.toLowerCase()}.ts.template`;
+
+    try {
+        let template = await loadTemplate(templateFile);
+
+        // Generate object class cases
+        const objectClassCases = objectClasses.map(oc => {
+            const caseTemplate = template.match(/{{#objectClassCase}}([\s\S]*?){{\/objectClassCase}}/)?.[1] || "";
+            return renderTemplate(caseTemplate, { objectClass: oc });
+        }).join("\n");
+
+        // Remove the loop markers and render the full template
+        template = template.replace(/{{#objectClassCase}}[\s\S]*?{{\/objectClassCase}}/, objectClassCases);
+
+        return template;
+    } catch (err) {
+        console.warn(`Warning: Template ${templateFile} not found, operation ${operation} will not be generated`);
+        return "";
     }
 }
 
-const req = (k) => {
-    if (!args[k]) throw new Error(`Missing --${k}`);
-    return args[k];
-};
+async function generateIndexTs(connectorName, operations, objectClasses) {
+    let template;
+    try {
+        template = await loadTemplate("index.ts.template");
+    } catch (err) {
+        throw new Error(`Cannot generate index.ts: template/index.ts.template not found (${err.message})`);
+    }
 
-// Required
-const SRC = path.resolve(process.cwd(), req("src"));
-const NAME = req("name");
-const TYPE = req("type");
-const VERSION = req("version");
-const ENTRY = path.resolve(SRC, req("entry"));
+    // Generate operation methods
+    const operationMethods = [];
+    for (const op of operations) {
+        const code = await generateOperationCode(op, objectClasses);
+        if (code) operationMethods.push(code);
+    }
+    const operationMethodsStr = operationMethods.join("\n");
 
-// Optional
-const CONFIG = args["config"] ? path.resolve(SRC, args["config"]) : null;
-const INSTANCES_PATH = args["instances"] ? path.resolve(process.cwd(), args["instances"]) : null;
-const MINIFY = args["minify"] === "true";
+    // Generate operation exports
+    const operationExports = operations.map(op => {
+        const opLower = op.toLowerCase();
+        return opLower === "delete" ? "delete: del" : opLower;
+    }).join(",\n    ");
 
-// Project layout
-const ROOT = path.resolve(__dirname, "..");        // external-connectors/
-const DIST = path.resolve(ROOT, "dist");           // external-connectors/dist
-const OUTDIR = path.resolve(DIST, NAME);           // external-connectors/dist/<name>
+    // Generate object class definitions
+    const objectClassDefinitions = objectClasses.map(oc => {
+        const supportedOps = operations.map(op => `"${op.toUpperCase()}"`).join(", ");
+        return `      oc(
+        "${oc}",
+        "${oc}",
+        [
+          attr("id", "string", { readable: true, returnedByDefault: true }),
+          attr("name", "string", { readable: true, creatable: true, updateable: true, returnedByDefault: true }),
+          // TODO: Add more attributes for ${oc}
+        ],
+        [${supportedOps}]
+      )`;
+    }).join(",\n");
 
-async function ensureDir(d) {
-    await fs.mkdir(d, { recursive: true });
-}
-
-async function bundleFile(inFile, outFile) {
-    await esbuild.build({
-        entryPoints: [inFile],
-        outfile: outFile,
-        bundle: true,
-        platform: "node",
-        format: "esm",
-        target: "node18",
-        sourcemap: true,
-        minify: MINIFY,
-        legalComments: "none",
-        external: ["@openicf/connector-spi"]
+    // Render template
+    return renderTemplate(template, {
+        connectorName,
+        objectClassDefinitions,
+        operationMethods: operationMethodsStr,
+        operationExports
     });
 }
-async function copySharedSpi() {
-    const spiDist = path.resolve(SPI_PACKAGE, "dist");
-    const spiPackageJson = path.resolve(SPI_PACKAGE, "package.json");
 
-    try {
-        await fs.access(spiDist);
-    } catch {
-        throw new Error(
-            `connector-spi is not built. Please run:\n` +
-            `  cd ${SPI_PACKAGE}\n` +
-            `  npm install\n` +
-            `  npm run build`
-        );
-    }
-
-    const connectorNodeModules = path.resolve(OUTDIR, "node_modules", "@openicf", "connector-spi");
-    await ensureDir(connectorNodeModules);
-
-    await fs.copyFile(spiPackageJson, path.resolve(connectorNodeModules, "package.json"));
-
-    const targetDist = path.resolve(connectorNodeModules, "dist");
-    await fs.cp(spiDist, targetDist, { recursive: true });
-
-    console.log(`  • copied @openicf/connector-spi to node_modules`);
+function generateConfigTs(connectorName) {
+    return loadTemplate("config.ts.template")
+        .catch(err => {
+            throw new Error(`Cannot generate config.ts: templates/config.ts.template not found (${err.message})`);
+        })
+        .then(template => renderTemplate(template, { connectorName }));
 }
 
-// Call it before bundling
-await copySharedSpi();
+function generateConfigTsWithParams(connectorName, configParams) {
+    return loadTemplate("config.ts.template")
+        .catch(err => {
+            throw new Error(`Cannot generate config.ts: templates/config.ts.template not found (${err.message})`);
+        })
+        .then(template => {
+            // Generate configuration parameter definitions
+            const paramDefinitions = configParams.length > 0
+                ? configParams.map(param => `  ${param}: string;`).join("\n")
+                : `  // apiUrl: string;
+  // apiKey: string;
+  // timeout?: number;`;
 
-async function loadInstances() {
-    if (!INSTANCES_PATH) return [];
-    const data = await fs.readFile(INSTANCES_PATH, "utf8");
-    const js = JSON.parse(data);
-    if (Array.isArray(js)) return js;
-    if (js && typeof js === "object" && Array.isArray(js.instances)) return js.instances;
-    throw new Error("--instances file must be an array of { id, config? } or { instances: [...] }");
+            return renderTemplate(template, {
+                connectorName,
+                configParams: paramDefinitions
+            });
+        });
 }
 
-async function validateEntryPoint(filePath) {
-    try {
-        const stats = await fs.stat(filePath);
-        if (!stats.isFile()) {
-            throw new Error(`Entry point is not a file: ${filePath}`);
-        }
-
-        const content = await fs.readFile(filePath, "utf8");
-
-        if (!content.includes("export") && !content.includes("module.exports")) {
-            console.warn("⚠️  Warning: Entry point may not export a factory function");
-        }
-
-        return true;
-    } catch (e) {
-        throw new Error(`Entry point validation failed: ${e.message}`);
-    }
+function generatePackageJson(connectorName, version) {
+    return {
+        name: `${connectorName}-connector`,
+        version: version,
+        type: "module",
+        main: "./index.ts",
+        dependencies: {}
+    };
 }
 
-async function validateConfigFile(filePath) {
-    try {
-        const stats = await fs.stat(filePath);
-        if (!stats.isFile()) {
-            throw new Error(`Config file is not a file: ${filePath}`);
-        }
-        return true;
-    } catch (e) {
-        throw new Error(`Config file validation failed: ${e.message}`);
-    }
-}
-
-function validateVersion(version) {
-    const cleaned = semver.clean(version);
-    if (!cleaned) {
-        throw new Error(`Invalid semantic version: "${version}". Must follow semver format (e.g., "1.0.0", "2.1.3")`);
-    }
-    return cleaned;
-}
-
-function validateName(name) {
-    if (!/^[a-z0-9_-]+$/i.test(name)) {
-        throw new Error(`Invalid name: "${name}". Must contain only alphanumeric characters, underscores, and hyphens`);
-    }
-    if (name.length > 128) {
-        throw new Error(`Name too long: "${name}". Must be 128 characters or less`);
-    }
-    return name;
-}
-
-function validateType(type) {
-    if (!/^[a-z0-9_-]+$/i.test(type)) {
-        throw new Error(`Invalid type: "${type}". Must contain only alphanumeric characters, underscores, and hyphens`);
-    }
-    if (type.length > 128) {
-        throw new Error(`Type too long: "${type}". Must be 128 characters or less`);
-    }
-    return type;
-}
-
-async function validateBundledEntry(bundledPath) {
-    try {
-        const url = new URL(`file://${bundledPath}`);
-        const mod = await import(url.href);
-
-        if (typeof mod.default !== "function") {
-            throw new Error("Bundled entry point must have a default export that is a factory function");
-        }
-
-        console.log("✓ Validated: Entry exports a factory function");
-        return true;
-    } catch (e) {
-        if (e.message.includes("default export")) {
-            throw e;
-        }
-        console.warn(`⚠️  Warning: Could not validate entry point exports: ${e.message}`);
-        return false;
-    }
-}
-
-(async () => {
-    try {
-        console.log(`\n🔧 Packing connector '${NAME}' (type='${TYPE}', version='${VERSION}')`);
-
-        // Pre-deployment validation
-        console.log("\n📋 Running pre-deployment validation...");
-
-        const validatedName = validateName(NAME);
-        const validatedType = validateType(TYPE);
-        const validatedVersion = validateVersion(VERSION);
-
-        console.log(`✓ Name: ${validatedName}`);
-        console.log(`✓ Type: ${validatedType}`);
-        console.log(`✓ Version: ${validatedVersion}`);
-
-        await validateEntryPoint(ENTRY);
-        console.log(`✓ Entry point exists: ${path.relative(process.cwd(), ENTRY)}`);
-
-        if (CONFIG) {
-            await validateConfigFile(CONFIG);
-            console.log(`✓ Config file exists: ${path.relative(process.cwd(), CONFIG)}`);
-        }
-
-        await ensureDir(OUTDIR);
-
-        // Bundle entry
-        console.log("\n🔨 Building...");
-        const entryOut = path.resolve(OUTDIR, "index.js");
-        await bundleFile(ENTRY, entryOut);
-        console.log(`  • Built ./${NAME}/index.js`);
-
-        // Validate bundled entry exports
-        await validateBundledEntry(entryOut);
-
-        // Bundle config (optional)
-        let hasConfig = false;
-        if (CONFIG) {
-            const cfgOut = path.resolve(OUTDIR, "config.js");
-            await bundleFile(CONFIG, cfgOut);
-            hasConfig = true;
-            console.log(`  • Built ./${NAME}/config.js`);
-        }
-
-        // Instances
-        let instances = await loadInstances();
-        if (!instances.length) {
-            instances = [{ id: NAME, config: {} }];
-        }
-
-        // Validate instance configurations
-        for (const inst of instances) {
-            if (!inst.id) {
-                throw new Error("Instance configuration missing required 'id' field");
+function generateManifestJson(connectorName, connectorType, version) {
+    return {
+        id: connectorName,
+        type: connectorType,
+        version: version,
+        entry: "./index.ts",
+        config: "./config.ts",
+        instances: [
+            {
+                id: connectorName,
+                config: {}
             }
-            if (inst.connectorVersion) {
-                const cleanedInstVersion = semver.clean(inst.connectorVersion);
-                if (!cleanedInstVersion) {
-                    throw new Error(`Invalid semantic version in instance "${inst.id}": "${inst.connectorVersion}"`);
-                }
-            }
-        }
+        ]
+    };
+}
 
-        console.log(`✓ Validated ${instances.length} instance(s)`);
+async function main() {
+    console.log("=== Connector Scaffold Generator ===\n");
 
-        // Manifest path
-        const manifestPath = path.resolve(OUTDIR, "manifest.json");
-
-        // Manifest content expected by the service
-        const manifest = {
-            id: validatedName,
-            type: validatedType,
-            version: validatedVersion,
-            entry: "./index.js",
-            ...(hasConfig ? { config: "./config.js" } : {}),
-            instances
-        };
-
-        await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
-
-        console.log(`  • Wrote ./${NAME}/manifest.json`);
-        console.log(`\n✅ Connector '${NAME}@${validatedVersion}' ready at ${OUTDIR}`);
-        console.log(`\nNext steps:`);
-        console.log(`  1. Review the generated manifest at: ${manifestPath}`);
-        console.log(`  2. Start the service with: --connectors ${DIST}\n`);
-
-    } catch (e) {
-        console.error(`\n❌ Error: ${e.message}`);
-        if (e.stack && process.env.DEBUG) {
-            console.error(e.stack);
-        }
+    const name = await prompt("Connector name (e.g., salesforce): ");
+    if (!name.trim()) {
+        console.error("Error: Connector name is required");
         process.exit(1);
     }
-})();
+
+    const version = await prompt("Version (default: 1.0.0): ") || "1.0.0";
+
+    const type = await prompt(`Connector type (default: ${name}): `) || name;
+
+    const connectorDirName = `${name}-connector-${version}`;
+    const directory = await prompt(`Directory (default: ./${connectorDirName}): `) || `./${connectorDirName}`;
+
+    const operations = await promptMultiple(
+        "Supported operations",
+        "CREATE,GET,UPDATE,DELETE,SEARCH"
+    );
+
+    const objectClasses = await promptMultiple(
+        "Object classes",
+        "__ACCOUNT__,__GROUP__"
+    );
+
+    const configParams = await prompt("Configuration parameters (comma-separated, e.g., apiUrl,apiKey,timeout): ");
+    const configParamsList = configParams ? configParams.split(",").map(s => s.trim()).filter(Boolean) : [];
+
+    rl.close();
+
+    console.log("\n=== Generating connector scaffold ===\n");
+
+    const connectorDir = path.resolve(process.cwd(), directory);
+    await ensureDir(connectorDir);
+
+    const indexPath = path.join(connectorDir, "index.ts");
+    const configPath = path.join(connectorDir, "config.ts");
+    const packagePath = path.join(connectorDir, "package.json");
+    const manifestPath = path.join(connectorDir, "manifest.json");
+
+    const capitalizedName = name.charAt(0).toUpperCase() + name.slice(1);
+
+    await fs.writeFile(
+        indexPath,
+        await generateIndexTs(capitalizedName, operations, objectClasses),
+        "utf8"
+    );
+    console.log(`✓ Created ${indexPath}`);
+
+    await fs.writeFile(
+        configPath,
+        await generateConfigTsWithParams(capitalizedName, configParamsList),
+        "utf8"
+    );
+    console.log(`✓ Created ${configPath}`);
+
+    await fs.writeFile(
+        packagePath,
+        JSON.stringify(generatePackageJson(name, version), null, 2) + "\n",
+        "utf8"
+    );
+    console.log(`✓ Created ${packagePath}`);
+
+    await fs.writeFile(
+        manifestPath,
+        JSON.stringify(generateManifestJson(name, type, version), null, 2) + "\n",
+        "utf8"
+    );
+    console.log(`✓ Created ${manifestPath}`);
+
+    console.log("\n=== Scaffold complete ===");
+    console.log(`\nConnector directory: ${connectorDir}`);
+    console.log(`\nNext steps:`);
+    console.log(`1. Implement the TODO sections in ${indexPath}`);
+    console.log(`2. Add configuration properties in ${configPath}`);
+    console.log(`3. Build the connector using: npm run add-connector -- --src ${directory} --name ${name} --type ${type} --entry ./index.ts --config ./config.ts`);
+    console.log(`4. Start the service with: node src/server/index.js --connectors ./dist\n`);
+}
+
+main().catch((err) => {
+    console.error("Error:", err);
+    process.exit(1);
+});

@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.10",
-    "@openicf/connector-spi": "file:../connector-spi"
+    "semver": "^7.6.0",
+    "@governance-connector-framework/core": "file:vendor/governance-connector-framework-core-1.6.0-9b5b1b1.tgz"
   }
 }
