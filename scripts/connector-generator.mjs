@@ -23,6 +23,14 @@ async function promptMultiple(question, defaultValue = "") {
     return answer.split(",").map(s => s.trim()).filter(Boolean);
 }
 
+async function promptYesNo(question, defaultValue = false) {
+    const suffix = defaultValue ? "Y/n" : "y/N";
+    const answer = await prompt(`${question} (${suffix}): `);
+    const trimmed = answer.trim().toLowerCase();
+    if (!trimmed) return defaultValue;
+    return trimmed === "y" || trimmed === "yes";
+}
+
 async function ensureDir(dir) {
     await fs.mkdir(dir, { recursive: true });
 }
@@ -148,13 +156,19 @@ function generatePackageJson(connectorName, version) {
     };
 }
 
-function generateManifestJson(connectorName, connectorType, version) {
+function generateManifestJson(connectorName, connectorType, version, capabilities) {
     return {
         id: connectorName,
         type: connectorType,
         version: version,
         entry: "./index.ts",
         config: "./config.ts",
+        // All three default false in the framework's own resolveCapabilities()
+        // when absent -- written explicitly here so the connector author sees
+        // them as real, deliberate settings rather than missing keys.
+        poolable: capabilities.poolable,
+        idempotentDelta: capabilities.idempotentDelta,
+        equalitySearchOnName: capabilities.equalitySearchOnName,
         instances: [
             {
                 id: connectorName,
@@ -193,6 +207,21 @@ async function main() {
     const configParams = await prompt("Configuration parameters (comma-separated, e.g., apiUrl,apiKey,timeout): ");
     const configParamsList = configParams ? configParams.split(",").map(s => s.trim()).filter(Boolean) : [];
 
+    const poolable = await promptYesNo(
+        "Is this connector stateful (LDAP/SQL/SSH-style) and should run pooled?",
+        false
+    );
+
+    const idempotentDelta = await promptYesNo(
+        "Are this connector's add/remove-attribute-value operations safe to apply twice?",
+        false
+    );
+
+    const equalitySearchOnName = await promptYesNo(
+        "Does this connector support an equality search on the naming attribute?",
+        false
+    );
+
     rl.close();
 
     console.log("\n=== Generating connector scaffold ===\n");
@@ -230,7 +259,11 @@ async function main() {
 
     await fs.writeFile(
         manifestPath,
-        JSON.stringify(generateManifestJson(name, type, version), null, 2) + "\n",
+        JSON.stringify(
+            generateManifestJson(name, type, version, { poolable, idempotentDelta, equalitySearchOnName }),
+            null,
+            2
+        ) + "\n",
         "utf8"
     );
     console.log(`✓ Created ${manifestPath}`);
