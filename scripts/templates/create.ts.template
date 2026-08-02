@@ -27,6 +27,14 @@
         //     // ... map response back to attributes
         //   }
         // };
+        //
+        // If the target refuses because the object already exists, throw
+        // ConnectorError so the dispatcher can resolve this precisely
+        // (FAILED_CONFIRMED, no wasted retries) instead of falling back to
+        // its generic deadline-based classification:
+        // if (isDuplicateError(err)) {
+        //   throw new ConnectorError("ALREADY_EXISTS", `{{objectClass}} already exists`, { cause: err });
+        // }
 
         // Placeholder implementation (replace with actual API call):
         const newUid = `${Date.now()}`;

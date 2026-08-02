@@ -19,6 +19,7 @@ import type {
   SearchResult,
   SyncToken,
 } from "@governance-connector-framework/core/spi";
+import { ConnectorError } from "@governance-connector-framework/core/spi";
 
 const logger = {
   log: (...args: unknown[]) => console.log("[{{connectorName}}]", ...args),
