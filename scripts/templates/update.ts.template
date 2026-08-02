@@ -7,7 +7,7 @@
   ): Promise<ConnectorObject> {
     // TODO: Implement update operation
     logger.log(`Updating ${objectClass} ${uid}`, attrs);
-    
+
     switch (objectClass) {
 {{#objectClassCase}}      case "{{objectClass}}":
         // TODO: Update {{objectClass}} by uid via your API/service
@@ -28,14 +28,22 @@
         //     // ... map updated response back to attributes
         //   }
         // };
-        
+        //
+        // If the target reports the uid doesn't exist, throw ConnectorError
+        // so the dispatcher can resolve this precisely (FAILED_CONFIRMED,
+        // no wasted retries) instead of falling back to its generic
+        // deadline-based classification:
+        // if (isNotFoundError(err)) {
+        //   throw new ConnectorError("UNKNOWN_UID", `{{objectClass}} ${uid} not found`, { cause: err });
+        // }
+
         // Placeholder implementation (replace with actual API call):
         return {
           objectClass,
           uid,
           name: attrs.name as string || `${objectClass}-${uid}`,
-          attributes: { 
-            ...attrs, 
+          attributes: {
+            ...attrs,
             id: uid,
             // Return updated attributes
           }

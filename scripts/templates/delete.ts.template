@@ -6,14 +6,22 @@
   ): Promise<void> {
     // TODO: Implement delete operation
     logger.log(`Deleting ${objectClass} ${uid}`);
-    
+
     switch (objectClass) {
 {{#objectClassCase}}      case "{{objectClass}}":
         // TODO: Delete {{objectClass}} by uid via your API/service
         // Example implementation:
         // await client.delete(`/{{objectClass}}/${uid}`);
         // logger.log(`Successfully deleted {{objectClass}} ${uid}`);
-        
+        //
+        // If the target reports the uid doesn't exist, throw ConnectorError
+        // with UNKNOWN_UID rather than swallowing or rethrowing generically --
+        // the dispatcher treats UNKNOWN_UID on delete as SUCCEEDED (the
+        // desired end state, object absent, has already been reached):
+        // if (isNotFoundError(err)) {
+        //   throw new ConnectorError("UNKNOWN_UID", `{{objectClass}} ${uid} not found`, { cause: err });
+        // }
+
         // Placeholder implementation (replace with actual API call):
         logger.log(`Would delete {{objectClass}} with uid: ${uid}`);
         break;
