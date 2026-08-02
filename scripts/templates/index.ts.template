@@ -1,0 +1,73 @@
+// {{connectorName}} connector
+//
+// Generated scaffold. The default export below is a factory function --
+// @governance-connector-framework/core's ExternalLoader rejects any entry
+// module whose default export isn't a function, so don't restructure this
+// into a plain exported object.
+//
+// Fill in the TODOs inside each operation function before deploying.
+
+import type {
+  AttributeValue,
+  AttrType,
+  AttributeInfo,
+  ConnectorObject,
+  ObjectClassInfo,
+  OperationOptions,
+  ResultsHandler,
+  Schema,
+  SearchResult,
+  SyncToken,
+} from "@governance-connector-framework/core/spi";
+
+const logger = {
+  log: (...args: unknown[]) => console.log("[{{connectorName}}]", ...args),
+};
+
+// The SPI defines the ObjectClassInfo/AttributeInfo *shapes* but ships no
+// constructor functions for them, so schema() below is assembled with these
+// small local builders instead of hand-written object literals.
+function attr(name: string, type: AttrType, opts: Partial<AttributeInfo> = {}): AttributeInfo {
+  return { name, type, ...opts };
+}
+
+function oc(
+  name: string,
+  nativeName: string,
+  attributes: AttributeInfo[],
+  supports: ObjectClassInfo["supports"]
+): ObjectClassInfo {
+  return { name, nativeName, attributes, supports };
+}
+
+export default function factory(config: Record<string, unknown>) {
+  // TODO: construct a client from config here, e.g.:
+  // const client = createClient(config);
+
+{{operationMethods}}
+
+  async function schema(): Promise<Schema> {
+    return {
+      objectClasses: [
+{{objectClassDefinitions}}
+      ],
+    };
+  }
+
+  async function test(): Promise<void> {
+    // TODO: verify connectivity/credentials against the target system.
+    logger.log("test() not implemented -- assuming reachable");
+  }
+
+  return {
+    // ICF-native streaming search: the third argument to search() is called
+    // once per result (see search()'s own signature/TODO below). Read from
+    // @governance-connector-framework/core/spi's SearchCapability doc comment
+    // before changing this -- it must match what search() actually does.
+    searchStreaming: true,
+
+    schema,
+    test,
+    {{operationExports}}
+  };
+}

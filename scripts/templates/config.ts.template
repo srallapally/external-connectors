@@ -1,0 +1,19 @@
+// {{connectorName}} connector configuration
+//
+// @governance-connector-framework/core's ExternalLoader merges manifest/
+// instance config and resolves ${VAR_NAME}-shaped string values from
+// process.env before calling buildConfiguration() below -- this module never
+// needs to read process.env itself.
+
+export interface {{connectorName}}Config {
+{{configParams}}
+}
+
+/**
+ * Called once per instance at load time with the merged, env-resolved raw
+ * config. Validate required fields and apply defaults here.
+ */
+export async function buildConfiguration(raw: Record<string, unknown>): Promise<{{connectorName}}Config> {
+  // TODO: validate required fields are present and correctly typed.
+  return raw as unknown as {{connectorName}}Config;
+}
